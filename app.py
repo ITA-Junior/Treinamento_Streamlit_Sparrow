@@ -63,91 +63,78 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 st.sidebar.markdown('## 🔍 Filtros Globais')
 st.sidebar.markdown('Estes filtros afetam todas as abas')
 
-# Date range filter
-default_start = datetime.date(2016, 1, 1)
-default_end = datetime.date(2017, 12, 31)
+# ============================================================================
+# LOAD ALL DATA (unfiltered, cached)
+# ============================================================================
+
+df_all = data.load_orders()
+
+if df_all.empty:
+    st.error('❌ Nenhum dado encontrado no banco. Verifique a conexão com o Supabase.')
+    st.stop()
+
+# Derive filter options from the actual data
+def _vals(col):
+    return sorted(df_all[col].dropna().unique().tolist()) if col in df_all.columns else []
+
+all_regions       = _vals('Region')
+all_states        = _vals('State')
+all_cities        = _vals('City')
+all_segments      = _vals('Segment')
+all_categories    = _vals('Category')
+all_sub_categories = _vals('Sub-Category')
+all_ship_modes    = _vals('Ship Mode')
+
+# ============================================================================
+# SIDEBAR FILTERS
+# ============================================================================
+
+# Date range filter (empty = sem restrição)
 date_range = st.sidebar.date_input(
     'Período de Order Date',
-    [default_start, default_end],
+    [],
     key='date_range_sidebar'
 )
 
-# Get distinct values for multiselects
-all_regions = data.get_distinct_values('Orders', 'Region') or ['West', 'East', 'Central', 'South']
-all_states = data.get_distinct_values('Orders', 'State') or []
-all_cities = data.get_distinct_values('Orders', 'City') or []
-all_segments = data.get_distinct_values('Orders', 'Segment') or ['Consumer', 'Corporate', 'Home Office']
-all_categories = data.get_distinct_values('Orders', 'Category') or ['Furniture', 'Office Supplies', 'Technology']
-all_sub_categories = data.get_distinct_values('Orders', 'Sub-Category') or []
-all_ship_modes = data.get_distinct_values('Orders', 'Ship Mode') or ['Standard Class', 'Second Class', 'First Class', 'Same Day']
-
-# Region filter
 selected_regions = st.sidebar.multiselect(
-    'Região (Region)',
-    all_regions,
-    default=all_regions,
-    key='regions_filter'
+    'Região (Region)', all_regions, key='regions_filter'
 )
-
-# State filter
 selected_states = st.sidebar.multiselect(
-    'Estado (State)',
-    all_states,
-    default=all_states,
-    key='states_filter'
+    'Estado (State)', all_states, key='states_filter'
 )
-
-# City filter
 selected_cities = st.sidebar.multiselect(
-    'Cidade (City)',
-    all_cities,
-    default=all_cities,
-    key='cities_filter'
+    'Cidade (City)', all_cities, key='cities_filter'
 )
-
-# Segment filter
 selected_segments = st.sidebar.multiselect(
-    'Segmento (Segment)',
-    all_segments,
-    default=all_segments,
-    key='segments_filter'
+    'Segmento (Segment)', all_segments, key='segments_filter'
 )
-
-# Category filter
 selected_categories = st.sidebar.multiselect(
-    'Categoria (Category)',
-    all_categories,
-    default=all_categories,
-    key='categories_filter'
+    'Categoria (Category)', all_categories, key='categories_filter'
 )
-
-# Sub-Category filter
 selected_sub_categories = st.sidebar.multiselect(
-    'Subcategoria (Sub-Category)',
-    all_sub_categories,
-    default=all_sub_categories,
-    key='sub_categories_filter'
+    'Subcategoria (Sub-Category)', all_sub_categories, key='sub_categories_filter'
 )
-
-# Ship Mode filter
 selected_ship_modes = st.sidebar.multiselect(
-    'Tipo de Envio (Ship Mode)',
-    all_ship_modes,
-    default=all_ship_modes,
-    key='ship_modes_filter'
+    'Tipo de Envio (Ship Mode)', all_ship_modes, key='ship_modes_filter'
 )
 
 st.sidebar.markdown('---')
 
 # Clear filters button
 if st.sidebar.button('🔄 Limpar Filtros', use_container_width=True):
+    for key in [
+        'date_range_sidebar', 'regions_filter', 'states_filter', 'cities_filter',
+        'segments_filter', 'categories_filter', 'sub_categories_filter', 'ship_modes_filter'
+    ]:
+        st.session_state.pop(key, None)
     st.rerun()
 
 # ============================================================================
-# LOAD FILTERED DATA
+# APPLY FILTERS IN PYTHON
 # ============================================================================
 
-df = data.load_orders(
+df = data.apply_filters(
+    df_all,
     date_range=tuple(date_range) if len(date_range) == 2 else None,
     regions=selected_regions if selected_regions else None,
     states=selected_states if selected_states else None,
