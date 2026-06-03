@@ -85,6 +85,13 @@ all_categories    = _vals('Category')
 all_sub_categories = _vals('Sub-Category')
 all_ship_modes    = _vals('Ship Mode')
 
+
+def _set_index_starting_at_one(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy of the DataFrame with row index starting at 1."""
+    df = df.copy()
+    df.index = pd.RangeIndex(start=1, stop=len(df) + 1)
+    return df
+
 # ============================================================================
 # SIDEBAR FILTERS
 # ============================================================================
@@ -240,7 +247,9 @@ with tab2:
             st.metric('🏆 Cidade Líder', top_city, f'${top_sales:,.2f}')
         with col2:
             st.dataframe(
-                sales_by_city.head(5).reset_index().rename(columns={'City': 'Cidade', 'Sales': 'Vendas'}),
+                _set_index_starting_at_one(
+                    sales_by_city.head(5).reset_index().rename(columns={'City': 'Cidade', 'Sales': 'Vendas'})
+                ),
                 use_container_width=True
             )
         
@@ -303,7 +312,9 @@ with tab2:
         
         sales_by_segment = df.groupby('Segment')['Sales'].sum().sort_values(ascending=False)
         st.dataframe(
-            sales_by_segment.reset_index().rename(columns={'Segment': 'Segmento', 'Sales': 'Vendas Totais'}),
+            _set_index_starting_at_one(
+                sales_by_segment.reset_index().rename(columns={'Segment': 'Segmento', 'Sales': 'Vendas Totais'})
+            ),
             use_container_width=True
         )
         
