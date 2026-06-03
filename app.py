@@ -402,7 +402,7 @@ with tab3:
             with col2:
                 st.metric('Média Depois do Desconto (15%)', f'${avg_after:,.2f}')
             with col3:
-                st.metric('Diferença Média', f'${difference:,.2f}', delta=-f'${difference:,.2f}')
+                st.metric('Diferença Média', f'${difference:,.2f}', delta=f'-${difference:,.2f}')
             
             st.info('💡 **Insight:** O desconto de 15% reduz a receita média em ' + f'${difference:,.2f}' + 
                    ', que pode ser compensado pelo aumento no volume de vendas.')
