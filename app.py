@@ -147,20 +147,16 @@ if st.sidebar.button('🔄 Limpar Filtros', use_container_width=True):
 # LOAD FILTERED DATA
 # ============================================================================
 
-@st.cache_data(ttl=600)
-def get_filtered_data():
-    return data.load_orders(
-        date_range=tuple(date_range) if len(date_range) == 2 else None,
-        regions=selected_regions if selected_regions else None,
-        states=selected_states if selected_states else None,
-        cities=selected_cities if selected_cities else None,
-        segments=selected_segments if selected_segments else None,
-        categories=selected_categories if selected_categories else None,
-        sub_categories=selected_sub_categories if selected_sub_categories else None,
-        ship_modes=selected_ship_modes if selected_ship_modes else None,
-    )
-
-df = get_filtered_data()
+df = data.load_orders(
+    date_range=tuple(date_range) if len(date_range) == 2 else None,
+    regions=selected_regions if selected_regions else None,
+    states=selected_states if selected_states else None,
+    cities=selected_cities if selected_cities else None,
+    segments=selected_segments if selected_segments else None,
+    categories=selected_categories if selected_categories else None,
+    sub_categories=selected_sub_categories if selected_sub_categories else None,
+    ship_modes=selected_ship_modes if selected_ship_modes else None,
+)
 
 if df.empty:
     st.warning('⚠️ Nenhum dado encontrado com os filtros aplicados. Verifique as seleções no sidebar.')

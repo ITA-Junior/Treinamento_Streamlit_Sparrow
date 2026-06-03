@@ -89,7 +89,10 @@ def load_orders(
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        
+
+        if 'Sales' in df.columns and 'Quantity' in df.columns:
+            df['Sales'] = df['Sales'] * df['Quantity']
+
         # Apply date range filter (client-side since server may not support date comparisons)
         if date_range and len(date_range) == 2:
             start_date, end_date = date_range
