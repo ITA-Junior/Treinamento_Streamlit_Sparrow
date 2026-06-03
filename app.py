@@ -1,263 +1,582 @@
+"""
+Superstore Streamlit Dashboard - ITA Júnior 2026 Python Course
+
+A comprehensive business intelligence dashboard connecting to Supabase (PostgreSQL)
+with interactive filters and analysis of 10 key business questions.
+"""
+
 import os
 import datetime
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
-# 1. Carrega as variáveis salvas no arquivo .env
+from src import data, charts
+
+# Load environment variables
 load_dotenv()
+
+# ============================================================================
+# PAGE CONFIGURATION
+# ============================================================================
+
+st.set_page_config(
+    page_title='Superstore Dashboard - ITA Júnior 2026',
+    page_icon='📊',
+    layout='wide',
+    initial_sidebar_state='expanded'
+)
+
+# Custom CSS for better formatting
+st.markdown("""
+    <style>
+        .metric-container { margin: 10px 0; }
+        .insight-box { background-color: #e8f4f8; padding: 15px; border-radius: 8px; margin: 10px 0; }
+    </style>
+""", unsafe_allow_html=True)
+
+# ============================================================================
+# HEADER
+# ============================================================================
+
+st.title('📊 Superstore Dashboard')
+st.subheader('Curso de Python ITA Júnior 2026')
+st.markdown('---')
+
+# ============================================================================
+# VALIDATE ENVIRONMENT
+# ============================================================================
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
-# 2. Configuração visual da página do Streamlit
-st.set_page_config(page_title='Curso Python ITA Júnior 2026', page_icon='🐍', layout='wide')
-
-# 3. Valida as variáveis de ambiente antes de criar o cliente
 if not SUPABASE_URL or not SUPABASE_KEY:
-    st.title('🚀 Entregável Streamlit + Supabase')
-    st.subheader('Curso de Python ITA Júnior 2026')
-    st.write('---')
-    st.error('As variáveis SUPABASE_URL e SUPABASE_KEY não foram encontradas no arquivo .env.')
+    st.error('❌ As variáveis SUPABASE_URL e SUPABASE_KEY não foram encontradas no arquivo .env.')
     st.write('Crie um arquivo .env com essas variáveis e reinicie o app.')
     st.stop()
 
-# 4. Inicializa o cliente de conexão com o banco
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# ============================================================================
+# SIDEBAR - GLOBAL FILTERS
+# ============================================================================
 
-st.title('🚀 Entregável Streamlit + Supabase')
-st.subheader('Curso de Python ITA Júnior 2026')
+st.sidebar.markdown('## 🔍 Filtros Globais')
+st.sidebar.markdown('Estes filtros afetam todas as abas')
 
-st.write('---')
+# Date range filter
+default_start = datetime.date(2016, 1, 1)
+default_end = datetime.date(2017, 12, 31)
+date_range = st.sidebar.date_input(
+    'Período de Order Date',
+    [default_start, default_end],
+    key='date_range_sidebar'
+)
 
-tabelas_disponiveis = ['Orders', 'People', 'Returns']
-selected_table = st.sidebar.selectbox('📌 Escolha a tabela Supabase', tabelas_disponiveis, index=0)
-rows_to_show = st.sidebar.slider('Linhas exibidas', min_value=10, max_value=300, value=100, step=10)
+# Get distinct values for multiselects
+all_regions = data.get_distinct_values('Orders', 'Region') or ['West', 'East', 'Central', 'South']
+all_states = data.get_distinct_values('Orders', 'State') or []
+all_cities = data.get_distinct_values('Orders', 'City') or []
+all_segments = data.get_distinct_values('Orders', 'Segment') or ['Consumer', 'Corporate', 'Home Office']
+all_categories = data.get_distinct_values('Orders', 'Category') or ['Furniture', 'Office Supplies', 'Technology']
+all_sub_categories = data.get_distinct_values('Orders', 'Sub-Category') or []
+all_ship_modes = data.get_distinct_values('Orders', 'Ship Mode') or ['Standard Class', 'Second Class', 'First Class', 'Same Day']
 
-st.sidebar.write('---')
-st.sidebar.markdown('## Filtros específicos')
+# Region filter
+selected_regions = st.sidebar.multiselect(
+    'Região (Region)',
+    all_regions,
+    default=all_regions,
+    key='regions_filter'
+)
 
-# 5. Funções de utilidade
-def get_distinct_values(table_name: str, column_name: str):
-    try:
-        response = supabase.table(table_name).select(column_name).execute()
-        if response.data:
-            values = sorted({row.get(column_name) for row in response.data if row.get(column_name) not in (None, '')})
-            return values
-    except Exception:
-        pass
-    return []
+# State filter
+selected_states = st.sidebar.multiselect(
+    'Estado (State)',
+    all_states,
+    default=all_states,
+    key='states_filter'
+)
 
+# City filter
+selected_cities = st.sidebar.multiselect(
+    'Cidade (City)',
+    all_cities,
+    default=all_cities,
+    key='cities_filter'
+)
 
-def get_table_count(table_name: str):
-    try:
-        result = supabase.table(table_name).select('*', count='exact').limit(1).execute()
-        return result.count or 0
-    except Exception:
-        return None
+# Segment filter
+selected_segments = st.sidebar.multiselect(
+    'Segmento (Segment)',
+    all_segments,
+    default=all_segments,
+    key='segments_filter'
+)
 
+# Category filter
+selected_categories = st.sidebar.multiselect(
+    'Categoria (Category)',
+    all_categories,
+    default=all_categories,
+    key='categories_filter'
+)
 
-def format_date(value: datetime.date):
-    return value.strftime('%Y-%m-%d')
+# Sub-Category filter
+selected_sub_categories = st.sidebar.multiselect(
+    'Subcategoria (Sub-Category)',
+    all_sub_categories,
+    default=all_sub_categories,
+    key='sub_categories_filter'
+)
 
+# Ship Mode filter
+selected_ship_modes = st.sidebar.multiselect(
+    'Tipo de Envio (Ship Mode)',
+    all_ship_modes,
+    default=all_ship_modes,
+    key='ship_modes_filter'
+)
 
-# 6. Exibe resumo das tabelas
-table_counts = {name: get_table_count(name) for name in tabelas_disponiveis}
+st.sidebar.markdown('---')
 
-with st.expander('📊 Estado das tabelas do Supabase', expanded=True):
-    for name, count in table_counts.items():
-        if count is None:
-            st.warning(f'Tabela {name}: não foi possível consultar o número de registros.')
-        else:
-            st.success(f'Tabela {name}: {count} registros encontrados')
+# Clear filters button
+if st.sidebar.button('🔄 Limpar Filtros', use_container_width=True):
+    st.rerun()
 
-st.write('---')
+# ============================================================================
+# LOAD FILTERED DATA
+# ============================================================================
 
-# 7. Filtros por tabela
-if selected_table == 'Orders':
-    st.sidebar.markdown('### Orders')
-    ship_modes = get_distinct_values('Orders', 'Ship Mode') or ['Standard Class', 'Second Class', 'First Class', 'Same Day']
-    segments = get_distinct_values('Orders', 'Segment') or ['Consumer', 'Corporate', 'Home Office']
-    regions = get_distinct_values('Orders', 'Region') or ['West', 'East', 'Central', 'South']
-    categories = get_distinct_values('Orders', 'Category') or ['Furniture', 'Office Supplies', 'Technology']
-    sub_categories = get_distinct_values('Orders', 'Sub-Category')
-    countries = get_distinct_values('Orders', 'Country')
-
-    order_date_range = st.sidebar.date_input(
-        'Período de Order Date',
-        [datetime.date(2016, 1, 1), datetime.date(2017, 12, 31)],
-        key='order_date_range'
+@st.cache_data(ttl=600)
+def get_filtered_data():
+    return data.load_orders(
+        date_range=tuple(date_range) if len(date_range) == 2 else None,
+        regions=selected_regions if selected_regions else None,
+        states=selected_states if selected_states else None,
+        cities=selected_cities if selected_cities else None,
+        segments=selected_segments if selected_segments else None,
+        categories=selected_categories if selected_categories else None,
+        sub_categories=selected_sub_categories if selected_sub_categories else None,
+        ship_modes=selected_ship_modes if selected_ship_modes else None,
     )
-    use_ship_date = st.sidebar.checkbox('Filtrar por Ship Date', value=False)
-    ship_date_range = None
-    if use_ship_date:
-        ship_date_range = st.sidebar.date_input(
-            'Período de Ship Date',
-            [datetime.date(2016, 1, 1), datetime.date(2017, 12, 31)],
-            key='ship_date_range'
-        )
 
-    selected_ship_modes = st.sidebar.multiselect('Ship Mode', ship_modes, default=ship_modes)
-    selected_segments = st.sidebar.multiselect('Segment', segments, default=segments)
-    selected_regions = st.sidebar.multiselect('Region', regions, default=regions)
-    selected_categories = st.sidebar.multiselect('Category', categories, default=categories)
-    selected_sub_categories = st.sidebar.multiselect('Sub-Category', sub_categories, default=sub_categories)
-    selected_countries = st.sidebar.multiselect('Country', countries, default=countries)
-    order_id_filter = st.sidebar.text_input('Order ID')
-    customer_filter = st.sidebar.text_input('Customer Name')
-    product_filter = st.sidebar.text_input('Product Name')
-    min_sales = st.sidebar.number_input('Sales mínimo', value=0.0, step=1.0)
-    max_sales = st.sidebar.number_input('Sales máximo', value=10000.0, step=1.0)
-    min_profit = st.sidebar.number_input('Profit mínimo', value=-10000.0, step=1.0)
-    max_profit = st.sidebar.number_input('Profit máximo', value=10000.0, step=1.0)
+df = get_filtered_data()
 
-    # Build a select builder and a separate count builder (count is only accepted when set on initial select)
-    def apply_order_filters(builder):
-        if selected_ship_modes:
-            builder = builder.in_('Ship Mode', selected_ship_modes)
-        if selected_segments:
-            builder = builder.in_('Segment', selected_segments)
-        if selected_regions:
-            builder = builder.in_('Region', selected_regions)
-        if selected_categories:
-            builder = builder.in_('Category', selected_categories)
-        if selected_sub_categories:
-            builder = builder.in_('Sub-Category', selected_sub_categories)
-        if selected_countries:
-            builder = builder.in_('Country', selected_countries)
-        if order_id_filter:
-            builder = builder.ilike('Order ID', f'%{order_id_filter}%')
-        if customer_filter:
-            builder = builder.ilike('Customer Name', f'%{customer_filter}%')
-        if product_filter:
-            builder = builder.ilike('Product Name', f'%{product_filter}%')
-        builder = builder.gte('Sales', min_sales).lte('Sales', max_sales)
-        builder = builder.gte('Profit', min_profit).lte('Profit', max_profit)
-        return builder
+if df.empty:
+    st.warning('⚠️ Nenhum dado encontrado com os filtros aplicados. Verifique as seleções no sidebar.')
+    st.stop()
 
-    select_builder = supabase.table('Orders').select('*')
-    select_builder = apply_order_filters(select_builder)
+# ============================================================================
+# MAIN TABS
+# ============================================================================
 
-    # For exact total count of filtered rows, build a separate select with count='exact'
-    count_builder = supabase.table('Orders').select('*', count='exact')
-    count_builder = apply_order_filters(count_builder)
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🏠 Visão Geral",
+    "📊 Perguntas 1–5",
+    "📈 Perguntas 6–10",
+    "💡 Conclusões & Recomendações"
+])
 
-    def parse_order_date(value):
-        if not value:
-            return None
-        for fmt in ('%m/%d/%Y', '%m/%d/%y', '%Y-%m-%d'):
-            try:
-                return datetime.datetime.strptime(value, fmt).date()
-            except Exception:
-                continue
-        return None
+# ============================================================================
+# TAB 1: VISÃO GERAL (OVERVIEW)
+# ============================================================================
 
-    def filter_order_rows(rows):
-        filtered = []
-        for row in rows:
-            order_date = parse_order_date(row.get('Order Date'))
-            ship_date = parse_order_date(row.get('Ship Date'))
-            if order_date_range and len(order_date_range) == 2:
-                if order_date is None:
-                    continue
-                if order_date < order_date_range[0] or order_date > order_date_range[1]:
-                    continue
-            if ship_date_range and len(ship_date_range) == 2:
-                if ship_date is None:
-                    continue
-                if ship_date < ship_date_range[0] or ship_date > ship_date_range[1]:
-                    continue
-            filtered.append(row)
-        return filtered
+with tab1:
+    st.header('Visão Geral do Dataset')
+    
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric('Total de Pedidos', f'{len(df):,}')
+    
+    with col2:
+        total_sales = df['Sales'].sum()
+        st.metric('Total de Vendas', f'${total_sales:,.2f}')
+    
+    with col3:
+        total_profit = df['Profit'].sum()
+        st.metric('Lucro Total', f'${total_profit:,.2f}')
+    
+    with col4:
+        avg_sales = df['Sales'].mean()
+        st.metric('Ticket Médio', f'${avg_sales:,.2f}')
+    
+    st.markdown('---')
+    
+    # Data quality info
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader('📈 Informações do Dataset')
+        st.write(f'- **Período**: {df["Order Date"].min().strftime("%d/%m/%Y")} a {df["Order Date"].max().strftime("%d/%m/%Y")}')
+        st.write(f'- **Regiões**: {df["Region"].nunique()} únicas')
+        st.write(f'- **Estados**: {df["State"].nunique()} únicos')
+        st.write(f'- **Cidades**: {df["City"].nunique()} únicas')
+        st.write(f'- **Segmentos**: {df["Segment"].nunique()}')
+        st.write(f'- **Categorias**: {df["Category"].nunique()}')
+        st.write(f'- **Subcategorias**: {df["Sub-Category"].nunique()}')
+    
+    with col2:
+        st.subheader('💹 Estatísticas de Vendas')
+        st.write(f'- **Sales Min**: ${df["Sales"].min():,.2f}')
+        st.write(f'- **Sales Max**: ${df["Sales"].max():,.2f}')
+        st.write(f'- **Sales Mediana**: ${df["Sales"].median():,.2f}')
+        st.write(f'- **Profit Min**: ${df["Profit"].min():,.2f}')
+        st.write(f'- **Profit Max**: ${df["Profit"].max():,.2f}')
+        st.write(f'- **Discount Médio**: {df["Discount"].mean():.2%}')
+    
+    st.markdown('---')
+    
+    # Data preview
+    st.subheader('Primeiras Linhas do Dataset')
+    st.dataframe(
+        df.head(20),
+        use_container_width=True,
+        height=400
+    )
 
-elif selected_table == 'People':
-    st.sidebar.markdown('### People')
-    people_regions = get_distinct_values('People', 'Region') or ['West', 'East', 'Central', 'South']
-    selected_people_regions = st.sidebar.multiselect('Region', people_regions, default=people_regions)
-    person_search = st.sidebar.text_input('Person')
+# ============================================================================
+# TAB 2: PERGUNTAS 1–5
+# ============================================================================
 
-    query = supabase.table('People').select('*')
-    if selected_people_regions:
-        query = query.in_('Region', selected_people_regions)
-    if person_search:
-        query = query.ilike('Person', f'%{person_search}%')
-
-else:
-    st.sidebar.markdown('### Returns')
-    returned_status = st.sidebar.selectbox('Returned', ['All', 'Yes', 'No'], index=0)
-    returns_order_id = st.sidebar.text_input('Order ID')
-
-    query = supabase.table('Returns').select('*')
-    if returned_status != 'All':
-        query = query.eq('Returned', returned_status)
-    if returns_order_id:
-        query = query.ilike('Order ID', f'%{returns_order_id}%')
-
-# 8. Execução da consulta
-try:
-    fetch_limit = rows_to_show if selected_table != 'Orders' else max(rows_to_show, 500)
-
-    if selected_table == 'Orders':
-        # execute data query
-        response = select_builder.limit(fetch_limit).execute()
-        if getattr(response, 'error', None):
-            raise Exception(response.error)
-        records = response.data or []
-
-        # apply client-side date parsing/filtering when needed
-        if 'order_date_range' in locals():
-            records = filter_order_rows(records)
-
-        # execute count separately (count='exact' must be provided on the initial select call)
-        try:
-            count_resp = count_builder.limit(1).execute()
-            total_count = getattr(count_resp, 'count', None)
-        except Exception:
-            total_count = None
-
-        displayed_rows = min(len(records), rows_to_show)
-
-        st.write(f'### Resultados - {selected_table}')
-        if total_count is not None:
-            st.metric('Registros filtrados (servidor)', total_count)
-        else:
-            st.metric('Registros filtrados (servidor)', len(records))
-        st.metric('Registros exibidos', displayed_rows)
-
-        if records:
-            st.dataframe(records[:rows_to_show])
-            with st.expander('Ver JSON cru dos resultados', expanded=False):
-                st.json(records[:rows_to_show])
-        else:
-            st.warning('Nenhum registro encontrado com os filtros aplicados.')
-            st.info('Ajuste os filtros ou confirme se há dados na tabela selecionada.')
-
+with tab2:
+    st.header('Análise de Negócio - Perguntas 1 a 5')
+    
+    # QUESTION 1: City with highest sales for Office Supplies
+    st.subheader('❓ Pergunta 1 — Cidade com maior valor de venda em Office Supplies')
+    
+    office_supplies = df[df['Category'] == 'Office Supplies']
+    if not office_supplies.empty:
+        sales_by_city = office_supplies.groupby('City')['Sales'].sum().sort_values(ascending=False)
+        top_city = sales_by_city.index[0]
+        top_sales = sales_by_city.iloc[0]
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.metric('🏆 Cidade Líder', top_city, f'${top_sales:,.2f}')
+        with col2:
+            st.dataframe(
+                sales_by_city.head(5).reset_index().rename(columns={'City': 'Cidade', 'Sales': 'Vendas'}),
+                use_container_width=True
+            )
+        
+        st.info('💡 **Insight:** A concentração de vendas de Office Supplies em ' + top_city + 
+                ' sugere uma oportunidade para otimizar a logística e expandir para outras cidades com potencial de crescimento.')
     else:
-        # non-orders tables use the common query variable
-        response = query.limit(fetch_limit).execute()
-        if getattr(response, 'error', None):
-            raise Exception(response.error)
-        records = response.data or []
+        st.warning('Nenhum dado de Office Supplies encontrado com os filtros aplicados.')
+    
+    st.divider()
+    
+    # QUESTION 2: Total sales by order date
+    st.subheader('❓ Pergunta 2 — Total de vendas por data do pedido')
+    
+    try:
+        fig = charts.plot_sales_by_date(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        st.info('💡 **Insight:** Analise padrões sazonais e picos de vendas para melhor planejamento de estoque e campanhas de marketing.')
+    except Exception as e:
+        st.error(f'Erro ao gerar gráfico: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 3: Total sales by state
+    st.subheader('❓ Pergunta 3 — Total de vendas por estado')
+    
+    try:
+        fig = charts.plot_sales_by_state(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        st.info('💡 **Insight:** Os estados com maiores vendas devem receber atenção especial para retenção e crescimento estratégico.')
+    except Exception as e:
+        st.error(f'Erro ao gerar gráfico: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 4: Top 10 cities
+    st.subheader('❓ Pergunta 4 — Top 10 cidades com maior total de vendas')
+    
+    try:
+        fig = charts.plot_top_10_cities(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        st.info('💡 **Insight:** Concentração urbana é evidente; considere estratégias específicas para cada metrópole.')
+    except Exception as e:
+        st.error(f'Erro ao gerar gráfico: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 5: Segment with highest sales
+    st.subheader('❓ Pergunta 5 — Segmento com maior total de vendas')
+    
+    try:
+        fig = charts.plot_segment_sales_pie(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        sales_by_segment = df.groupby('Segment')['Sales'].sum().sort_values(ascending=False)
+        st.dataframe(
+            sales_by_segment.reset_index().rename(columns={'Segment': 'Segmento', 'Sales': 'Vendas Totais'}),
+            use_container_width=True
+        )
+        
+        st.info('💡 **Insight:** O segmento líder merece investimento contínuo, enquanto segmentos menores têm potencial de crescimento com ações direcionadas.')
+    except Exception as e:
+        st.error(f'Erro ao gerar gráfico: {str(e)}')
 
-        total_rows = len(records)
-        displayed_rows = min(total_rows, rows_to_show)
+# ============================================================================
+# TAB 3: PERGUNTAS 6–10
+# ============================================================================
 
-        st.write(f'### Resultados - {selected_table}')
-        st.metric('Registros filtrados', total_rows)
-        st.metric('Registros exibidos', displayed_rows)
-
-        if records:
-            st.dataframe(records[:rows_to_show])
-            with st.expander('Ver JSON cru dos resultados', expanded=False):
-                st.json(records[:rows_to_show])
+with tab3:
+    st.header('Análise de Negócio - Perguntas 6 a 10')
+    
+    # QUESTION 6: Sales by segment and year
+    st.subheader('❓ Pergunta 6 — Total de vendas por segmento e por ano')
+    
+    try:
+        df_temp = df.copy()
+        df_temp['Year'] = df_temp['Order Date'].dt.year
+        sales_pivot = df_temp.pivot_table(
+            values='Sales',
+            index='Segment',
+            columns='Year',
+            aggfunc='sum'
+        )
+        
+        st.dataframe(sales_pivot.style.format('${:,.2f}'), use_container_width=True)
+        
+        fig = charts.plot_sales_by_segment_year(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        st.info('💡 **Insight:** Identifique segmentos em crescimento ou declínio para ajustar estratégias comerciais.')
+    except Exception as e:
+        st.error(f'Erro ao gerar análise: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 7: Discount simulation (15% vs 10%)
+    st.subheader('❓ Pergunta 7 — Simulação de desconto: quantas vendas receberiam 15%?')
+    
+    try:
+        # Apply discount logic: Sales > 1000 → 15%, else → 10%
+        df_temp = df.copy()
+        df_temp['Discount_Rate'] = df_temp['Sales'].apply(lambda x: 0.15 if x > 1000 else 0.10)
+        
+        count_15_percent = (df_temp['Discount_Rate'] == 0.15).sum()
+        count_10_percent = (df_temp['Discount_Rate'] == 0.10).sum()
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric('Vendas com 15% de desconto', count_15_percent)
+        with col2:
+            st.metric('Vendas com 10% de desconto', count_10_percent)
+        with col3:
+            percent_15 = (count_15_percent / len(df_temp)) * 100
+            st.metric('% de Vendas com 15%', f'{percent_15:.1f}%')
+        
+        # Summary table
+        summary_data = pd.DataFrame({
+            'Faixa de Desconto': ['15% (Sales > 1000)', '10% (Sales ≤ 1000)'],
+            'Quantidade': [count_15_percent, count_10_percent],
+            'Percentual': [f'{(count_15_percent/len(df_temp))*100:.1f}%', 
+                          f'{(count_10_percent/len(df_temp))*100:.1f}%']
+        })
+        
+        st.dataframe(summary_data, use_container_width=True, hide_index=True)
+        
+        st.info('💡 **Insight:** A proporção de transações de alto valor (>$1000) indica a relevância de políticas de desconto diferenciadas.')
+    except Exception as e:
+        st.error(f'Erro ao gerar simulação: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 8: Average before and after discount
+    st.subheader('❓ Pergunta 8 — Média do valor de venda antes e depois do desconto de 15%')
+    
+    try:
+        df_temp = df.copy()
+        df_temp['Discount_Rate'] = df_temp['Sales'].apply(lambda x: 0.15 if x > 1000 else 0.10)
+        
+        # Only high-value sales (15% discount)
+        high_value_sales = df_temp[df_temp['Sales'] > 1000]['Sales']
+        
+        if not high_value_sales.empty:
+            avg_before = high_value_sales.mean()
+            avg_after = avg_before * (1 - 0.15)  # 15% discount = 85% of original
+            difference = avg_before - avg_after
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric('Média Antes do Desconto', f'${avg_before:,.2f}')
+            with col2:
+                st.metric('Média Depois do Desconto (15%)', f'${avg_after:,.2f}')
+            with col3:
+                st.metric('Diferença Média', f'${difference:,.2f}', delta=-f'${difference:,.2f}')
+            
+            st.info('💡 **Insight:** O desconto de 15% reduz a receita média em ' + f'${difference:,.2f}' + 
+                   ', que pode ser compensado pelo aumento no volume de vendas.')
         else:
-            st.warning('Nenhum registro encontrado com os filtros aplicados.')
-            st.info('Ajuste os filtros ou confirme se há dados na tabela selecionada.')
+            st.warning('Nenhuma venda com valor > $1000 encontrada nos filtros aplicados.')
+    except Exception as e:
+        st.error(f'Erro ao gerar análise: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 9: Average sales by segment, year, month
+    st.subheader('❓ Pergunta 9 — Média de vendas por segmento, por ano e por mês')
+    
+    try:
+        fig = charts.plot_sales_per_segment_month(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        st.info('💡 **Insight:** Padrões temporais por segmento ajudam a prever demanda e otimizar recursos.')
+    except Exception as e:
+        st.error(f'Erro ao gerar gráfico: {str(e)}')
+    
+    st.divider()
+    
+    # QUESTION 10: Top 12 sub-categories
+    st.subheader('❓ Pergunta 10 — Total de vendas por categoria e subcategoria (Top 12)')
+    
+    try:
+        fig = charts.plot_top_12_subcategories(df)
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        # Detail table
+        top_12_subs = df.groupby('Sub-Category')['Sales'].sum().nlargest(12).index.tolist()
+        df_top12 = df[df['Sub-Category'].isin(top_12_subs)]
+        detail_table = df_top12.groupby(['Category', 'Sub-Category']).agg({
+            'Sales': 'sum',
+            'Order ID': 'count'
+        }).rename(columns={'Sales': 'Total Vendas', 'Order ID': 'Num Pedidos'}).sort_values('Total Vendas', ascending=False)
+        
+        st.dataframe(
+            detail_table.style.format({'Total Vendas': '${:,.2f}', 'Num Pedidos': '{:.0f}'}),
+            use_container_width=True
+        )
+        
+        st.info('💡 **Insight:** As subcategorias líderes concentram a maioria das receitas; otimize a apresentação e promoção desses produtos.')
+    except Exception as e:
+        st.error(f'Erro ao gerar gráfico: {str(e)}')
 
-except Exception as erro:
-    st.error('Ops, algo deu errado ao consultar o Supabase.')
-    st.code(str(erro))
-    if 'Could not find the table' in str(erro) or 'PGRST205' in str(erro):
-        st.info('A tabela selecionada não foi encontrada. Verifique o nome e o esquema no Supabase.')
-    if 'invalid_api_key' in str(erro).lower() or 'authentication' in str(erro).lower():
-        st.info('Verifique se a chave SUPABASE_KEY no .env está correta e com permissão de leitura.')
+# ============================================================================
+# TAB 4: CONCLUSÕES & RECOMENDAÇÕES
+# ============================================================================
+
+with tab4:
+    st.header('💡 Conclusões & Recomendações')
+    
+    st.markdown("""
+    ## Resumo dos Principais Insights
+    
+    Com base na análise do dataset Superstore filtrado, identificamos os seguintes pontos-chave:
+    
+    ### 📌 Insights Principais
+    
+    1. **Concentração Geográfica**: As vendas estão fortemente concentradas em um pequeno número de cidades 
+       e estados, indicando um mercado altamente urbanizado.
+    
+    2. **Distribuição de Segmentos**: A distribuição entre Consumer, Corporate e Home Office revela 
+       oportunidades de crescimento em segmentos menos desenvolvidos.
+    
+    3. **Padrões Sazonais**: Há evidência de sazonalidade nas vendas, com picos em determinados períodos 
+       do ano que demandam preparação logística.
+    
+    4. **Performance por Categoria**: Algumas categorias e subcategorias são muito mais rentáveis que outras, 
+       sugerindo necessidade de alocação diferenciada de recursos.
+    
+    5. **Impacto de Descontos**: Transações de alto valor (>$1000) representam uma fração significativa 
+       do volume, e políticas de desconto devem ser cuidadosamente calibradas.
+    
+    ---
+    
+    ## 🎯 Recomendações Estratégicas
+    
+    ### 1. **Diversificação Geográfica**
+       - Expandir presença em cidades e estados com baixa penetração atual
+       - Investir em campanhas de marketing direcionadas para regiões emergentes
+       - Considerar parcerias locais para reduzir barreiras de entrada
+    
+    ### 2. **Otimização de Segmentos**
+       - Fortalecer segmento líder com programas de fidelização
+       - Desenvolver estratégias customizadas para crescimento dos segmentos menores
+       - Investigar diferenças nas necessidades e comportamentos de compra por segmento
+    
+    ### 3. **Gestão de Inventário**
+       - Antecipar demanda sazonal com modelos de previsão
+       - Concentrar estoque em regiões e épocas de pico
+       - Reduzir estoque de produtos sazonais em períodos baixos
+    
+    ### 4. **Política de Preços e Descontos**
+       - Implementar sistema de descontos progressivos baseado em volume
+       - Monitorar margem de lucro de forma contínua
+       - A/B testar diferentes estratégias de precificação
+    
+    ### 5. **Racionalização de Portfólio**
+       - Focar em subcategorias de alto desempenho
+       - Revisar a continuidade de produtos de baixa rentabilidade
+       - Diversificar oferta em categorias líderes
+    
+    ---
+    
+    ## ⚠️ Limitações dos Dados
+    
+    Algumas considerações importantes sobre a qualidade e contexto dos dados:
+    
+    - **Amplitude Temporal**: O dataset atual cobre apenas 2 anos; análises de tendências de longo prazo 
+      requerem dados históricos mais extensos.
+    
+    - **Falta de Contexto Externo**: Não há informações sobre campanha de marketing, eventos econômicos 
+      ou ações da concorrência que possam explicar variações sazonais.
+    
+    - **Dados Demográficos Limitados**: Informações sobre características do cliente além de localização 
+      e segmento são escassas, limitando análises de personalização.
+    
+    - **Possíveis Dados Faltantes**: Podem haver inconsistências ou registros incompletos não detectados 
+      nesta análise inicial.
+    
+    - **Defasagem de Dados**: A análise reflete dados históricos; mudanças recentes no mercado podem não 
+      estar capturadas.
+    
+    ---
+    
+    ## 📥 Exportar Dados
+    
+    Baixe o dataset filtrado para análises adicionais em ferramentas externas.
+    """)
+    
+    st.markdown('---')
+    
+    # Download button
+    csv_data = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label='⬇️ Baixar Dados Filtrados (CSV)',
+        data=csv_data,
+        file_name='superstore_filtrado.csv',
+        mime='text/csv',
+        use_container_width=True
+    )
+    
+    st.markdown('---')
+    st.markdown('**Relatório gerado em**: ' + datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'))
+
+# ============================================================================
+# FOOTER
+# ============================================================================
+
+st.markdown('---')
+st.markdown(
+    '📚 Dashboard desenvolvido para o **Curso de Python ITA Júnior 2026** | '
+    '🔗 Dados via Supabase | '
+    '📊 Visualizações com Matplotlib & Seaborn'
+)
