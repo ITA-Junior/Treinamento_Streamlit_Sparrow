@@ -247,10 +247,11 @@ with tab2:
         with col1:
             st.metric('🏆 Cidade Líder', top_city, f'${top_sales:,.2f}')
         with col2:
+            df_city_table = _set_index_starting_at_one(
+                sales_by_city.head(5).reset_index().rename(columns={'City': 'Cidade', 'Sales': 'Vendas'})
+            )
             st.dataframe(
-                _set_index_starting_at_one(
-                    sales_by_city.head(5).reset_index().rename(columns={'City': 'Cidade', 'Sales': 'Vendas'})
-                ),
+                df_city_table.style.format({'Vendas': '${:,.2f}'}),
                 use_container_width=True
             )
         
@@ -312,10 +313,11 @@ with tab2:
         plt.close(fig)
         
         sales_by_segment = df.groupby('Segment')['Sales'].sum().sort_values(ascending=False)
+        df_segment_table = _set_index_starting_at_one(
+            sales_by_segment.reset_index().rename(columns={'Segment': 'Segmento', 'Sales': 'Vendas Totais'})
+        )
         st.dataframe(
-            _set_index_starting_at_one(
-                sales_by_segment.reset_index().rename(columns={'Segment': 'Segmento', 'Sales': 'Vendas Totais'})
-            ),
+            df_segment_table.style.format({'Vendas Totais': '${:,.2f}'}),
             use_container_width=True
         )
         
